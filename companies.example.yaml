@@ -1,0 +1,25 @@
+# DUMMY example — documents the format only. The REAL list is stored as the
+# COMPANIES_YAML GitHub Actions secret and is never committed to this repo.
+#
+# To find a company's `type` + `slug`, look at its career-page URL:
+#   boards.greenhouse.io/<slug>        -> type: greenhouse, slug: <slug>
+#   jobs.lever.co/<slug>               -> type: lever,      slug: <slug>
+#   jobs.ashbyhq.com/<slug>            -> type: ashby,      slug: <slug>
+# Anything else -> type: html with the full careers URL (best-effort scrape).
+
+companies:
+  - name: Example Conservation Org
+    type: greenhouse
+    slug: exampleorg
+
+  - name: Example Climate Startup
+    type: lever
+    slug: exampleclimate
+
+  - name: Example Research Institute
+    type: ashby
+    slug: exampleresearch
+
+  - name: Example Custom Careers Page
+    type: html
+    url: https://example.org/careers

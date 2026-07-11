@@ -1,0 +1,35 @@
+# Relevance keywords for the job filter. Safe to be public.
+#
+# A posting is emailed if its title or description matches at least one `include`
+# term and none of the `exclude` terms. Matching is case-insensitive and
+# word-boundary aware (so "GIS" does not match "logistics").
+#
+# Tune this file freely — after the first few digests you'll see what to add/remove.
+
+include:
+  - remote sensing
+  - geospatial
+  - GIS
+  - Google Earth Engine
+  - earth engine
+  - land cover
+  - land use
+  - LULC
+  - ecology
+  - ecologist
+  - scientist
+  - researcher
+  - environmental data
+  - spatial analysis
+  - spatial data
+  - earth observation
+  - satellite imagery
+  - QGIS
+  - ArcGIS
+
+# Optional. Drop a posting even if an include term matched (cuts obvious noise).
+exclude:
+  - sales
+  - internship
+  - director
+  - vice president

@@ -1,0 +1,12 @@
+# Private runtime files — NEVER commit these to a public repo.
+# The real company watchlist is delivered via the COMPANIES_YAML Actions secret,
+# and the run state lives in the Actions cache. Neither belongs in the repo.
+companies.yaml
+seen.json
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.env

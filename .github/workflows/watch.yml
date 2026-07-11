@@ -1,0 +1,51 @@
+name: job-watcher
+
+on:
+  schedule:
+    - cron: "0 13 * * 1-5"      # 13:00 UTC (~6-9am Pacific) on weekdays
+  workflow_dispatch:            # allow manual runs (with an optional seed)
+    inputs:
+      seed:
+        description: "Seed the cache without emailing (first run)"
+        type: boolean
+        default: false
+
+jobs:
+  watch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - run: pip install -r requirements.txt
+
+      # 1. Materialize the private watchlist from the secret (git-ignored).
+      - name: Write companies.yaml from secret
+        run: printf '%s' "$COMPANIES_YAML" > companies.yaml
+        env:
+          COMPANIES_YAML: ${{ secrets.COMPANIES_YAML }}
+
+      # 2. Restore prior state from the (private) Actions cache.
+      - name: Restore seen.json
+        uses: actions/cache/restore@v4
+        with:
+          path: seen.json
+          key: seen-${{ github.run_id }}
+          restore-keys: seen-
+
+      # 3. Run the watcher.
+      - name: Run job-watcher
+        run: python -m watcher.main ${{ (github.event_name == 'workflow_dispatch' && inputs.seed) && '--seed' || '' }}
+        env:
+          GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
+
+      # 4. Save updated state back to the cache (unique key; cache keys are immutable).
+      - name: Save seen.json
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: seen.json
+          key: seen-${{ github.run_id }}
