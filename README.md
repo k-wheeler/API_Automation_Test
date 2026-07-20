@@ -1,6 +1,6 @@
 # Job Posting Watcher
 
-Checks a private list of company career pages on a schedule, finds **new** postings
+Created with Claude Code to test its capabilities. This watcher checks a private list of company career pages on a schedule, finds **new** postings
 since the last run, filters them to ones matching keywords relevant to my skillset
 (ecology / geospatial / remote sensing), and emails me a digest.
 
