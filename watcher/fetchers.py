@@ -4,23 +4,36 @@ Each fetcher returns a list of normalized postings:
 
     {"id": str, "title": str, "location": str, "url": str, "description": str}
 
-The ATS-specific fetchers (Greenhouse, Lever, Ashby) hit clean JSON APIs and are
-reliable. The `html` fetcher is a best-effort fallback for custom career pages and
-only sees link text, not full descriptions — prefer a real ATS type when possible.
+Reliability, best to worst:
+  greenhouse / lever / ashby / bamboohr  -> clean JSON APIs
+  rippling                               -> parses the page's embedded Next.js JSON
+  html                                   -> best-effort scrape of a career page
+
+The `html` fetcher only sees what's in the server-returned HTML (no JavaScript
+runs), so it works when job *links* are present in the markup. When a link's
+visible text is generic ("Apply", "View Position") or JS-filled/empty, the title
+is derived from the URL slug instead.
 """
 
 from __future__ import annotations
 
 import hashlib
+import json
 import re
 from html import unescape
 from typing import Any
+from urllib.parse import urljoin, urlsplit
 
 import requests
 from bs4 import BeautifulSoup
 
-TIMEOUT = 20
-HEADERS = {"User-Agent": "job-watcher/1.0 (+https://github.com/k-wheeler/API_Automation_Test)"}
+TIMEOUT = 25
+HEADERS = {
+    "User-Agent": (
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
+        "(KHTML, like Gecko) Chrome/122 Safari/537.36"
+    )
+}
 
 
 class FetchError(Exception):
@@ -30,7 +43,6 @@ class FetchError(Exception):
 def _strip_html(text: str | None) -> str:
     if not text:
         return ""
-    # ATS "content" fields are often HTML (sometimes entity-escaped twice).
     soup = BeautifulSoup(unescape(text), "html.parser")
     return re.sub(r"\s+", " ", soup.get_text(" ")).strip()
 
@@ -40,29 +52,28 @@ def _hash_id(*parts: str) -> str:
 
 
 def _get(url: str, **kwargs: Any) -> requests.Response:
-    resp = requests.get(url, headers=HEADERS, timeout=TIMEOUT, **kwargs)
+    headers = {**HEADERS, **kwargs.pop("headers", {})}
+    resp = requests.get(url, headers=headers, timeout=TIMEOUT, **kwargs)
     resp.raise_for_status()
     return resp
 
 
-# --- ATS-specific fetchers ---------------------------------------------------
+# --- ATS-specific fetchers (clean JSON) --------------------------------------
 
 
 def fetch_greenhouse(slug: str) -> list[dict]:
     url = f"https://boards-api.greenhouse.io/v1/boards/{slug}/jobs?content=true"
     data = _get(url).json()
-    postings = []
-    for job in data.get("jobs", []):
-        postings.append(
-            {
-                "id": str(job.get("id")),
-                "title": job.get("title", "").strip(),
-                "location": (job.get("location") or {}).get("name", "").strip(),
-                "url": job.get("absolute_url", ""),
-                "description": _strip_html(job.get("content")),
-            }
-        )
-    return postings
+    return [
+        {
+            "id": str(job.get("id")),
+            "title": (job.get("title") or "").strip(),
+            "location": (job.get("location") or {}).get("name", "").strip(),
+            "url": job.get("absolute_url", ""),
+            "description": _strip_html(job.get("content")),
+        }
+        for job in data.get("jobs", [])
+    ]
 
 
 def fetch_lever(slug: str) -> list[dict]:
@@ -74,11 +85,10 @@ def fetch_lever(slug: str) -> list[dict]:
         postings.append(
             {
                 "id": str(job.get("id")),
-                "title": job.get("text", "").strip(),
+                "title": (job.get("text") or "").strip(),
                 "location": (cats.get("location") or "").strip(),
                 "url": job.get("hostedUrl", ""),
-                "description": job.get("descriptionPlain")
-                or _strip_html(job.get("description")),
+                "description": job.get("descriptionPlain") or _strip_html(job.get("description")),
             }
         )
     return postings
@@ -87,49 +97,142 @@ def fetch_lever(slug: str) -> list[dict]:
 def fetch_ashby(slug: str) -> list[dict]:
     url = f"https://api.ashbyhq.com/posting-api/job-board/{slug}"
     data = _get(url).json()
+    return [
+        {
+            "id": str(job.get("id")),
+            "title": (job.get("title") or "").strip(),
+            "location": (job.get("location") or "").strip(),
+            "url": job.get("jobUrl") or job.get("applyUrl", ""),
+            "description": job.get("descriptionPlain") or _strip_html(job.get("descriptionHtml")),
+        }
+        for job in data.get("jobs", [])
+    ]
+
+
+def fetch_bamboohr(slug: str) -> list[dict]:
+    url = f"https://{slug}.bamboohr.com/careers/list"
+    data = _get(url, headers={**HEADERS, "Accept": "application/json"}).json()
     postings = []
-    for job in data.get("jobs", []):
+    for job in data.get("result", []):
+        loc = job.get("location") or {}
+        parts = [loc.get("city"), loc.get("state")]
         postings.append(
             {
                 "id": str(job.get("id")),
-                "title": job.get("title", "").strip(),
-                "location": (job.get("location") or "").strip(),
-                "url": job.get("jobUrl") or job.get("applyUrl", ""),
-                "description": job.get("descriptionPlain")
-                or _strip_html(job.get("descriptionHtml")),
+                "title": (job.get("jobOpeningName") or "").strip(),
+                "location": ", ".join(p for p in parts if p).strip(),
+                "url": f"https://{slug}.bamboohr.com/careers/{job.get('id')}",
+                "description": job.get("employmentStatusLabel") or "",
             }
         )
     return postings
 
 
-def fetch_html(url: str) -> list[dict]:
-    """Best-effort scrape of a custom career page.
+def fetch_rippling(slug: str) -> list[dict]:
+    """Rippling ATS boards are Next.js apps; the job list is embedded in the
+    __NEXT_DATA__ script tag (react-query dehydrated state)."""
+    html = _get(f"https://ats.rippling.com/{slug}/jobs").text
+    m = re.search(r'<script id="__NEXT_DATA__"[^>]*>(.*?)</script>', html, re.S)
+    if not m:
+        raise FetchError(f"rippling/{slug}: no __NEXT_DATA__ block found")
+    data = json.loads(m.group(1))
+    queries = data.get("props", {}).get("pageProps", {}).get("dehydratedState", {}).get("queries", [])
+    items = []
+    for q in queries:
+        d = q.get("state", {}).get("data")
+        if isinstance(d, dict) and isinstance(d.get("items"), list) and d["items"]:
+            first = d["items"][0]
+            if isinstance(first, dict) and "name" in first and "url" in first:
+                items = d["items"]
+                break
+    postings = []
+    for job in items:
+        locs = job.get("locations") or []
+        loc_names = []
+        for l in locs:
+            if isinstance(l, dict):
+                loc_names.append(l.get("name") or l.get("city") or "")
+            elif isinstance(l, str):
+                loc_names.append(l)
+        postings.append(
+            {
+                "id": str(job.get("id")),
+                "title": (job.get("name") or "").strip(),
+                "location": ", ".join(x for x in loc_names if x).strip(),
+                "url": urljoin(f"https://ats.rippling.com/{slug}/", job.get("url", "")),
+                "description": (job.get("department") or {}).get("name", "")
+                if isinstance(job.get("department"), dict)
+                else str(job.get("department") or ""),
+            }
+        )
+    return postings
 
-    Emits one posting per anchor that looks like a job link. Only the link text is
-    available as title/description, so keyword matching runs against titles here.
-    """
+
+# --- Generic HTML fallback ---------------------------------------------------
+
+_GENERIC_TEXT = re.compile(
+    r"^(apply( here| now| today)?|view( position| role| job| opening| details)?|"
+    r"learn more|read more|see (more|position|role|open(ings?)?|details)|"
+    r"open role|details|join( us)?|more info|explore|view)$",
+    re.I,
+)
+_HREF_JOBLIKE = re.compile(r"(job|career|position|opening|posting|apply|req|vacanc|role)", re.I)
+_TEXT_JOBLIKE = re.compile(
+    r"(scientist|engineer|analyst|manager|researcher|ecologist|specialist|coordinator|"
+    r"technician|associate|director|lead|officer|fellow|advisor|intern|consultant|"
+    r"developer|designer|head of|vp|president|forester|gis|remote sensing)",
+    re.I,
+)
+_STOP_SLUG = {
+    "careers", "career", "jobs", "job", "positions", "openings", "opening",
+    "about", "team", "contact", "home", "apply", "index",
+}
+_UUID = re.compile(r"-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$", re.I)
+
+
+def _title_from_slug(url: str) -> str:
+    seg = urlsplit(url).path.rstrip("/").split("/")[-1]
+    if not seg:
+        return ""
+    seg = _UUID.sub("", seg)
+    seg = re.sub(r"-jr\d+$", "", seg, flags=re.I)      # WRI-style req ids
+    seg = re.sub(r"-\d{4}$", "", seg)                    # trailing year
+    seg = re.sub(r"-(job-application|application|job)$", "", seg, flags=re.I)
+    return seg.replace("_", " ").replace("-", " ").strip()
+
+
+def fetch_html(url: str) -> list[dict]:
+    """Best-effort scrape of a career page. Emits one posting per job-looking
+    link; titles come from the link text, or the URL slug when the text is
+    generic/empty. Only works on server-rendered markup (no JavaScript)."""
     resp = _get(url)
     soup = BeautifulSoup(resp.text, "html.parser")
     base = resp.url
     postings = []
-    seen_hrefs = set()
+    seen = set()
     for a in soup.find_all("a", href=True):
-        text = re.sub(r"\s+", " ", a.get_text(" ")).strip()
         href = a["href"].strip()
-        if not text or len(text) < 4:
+        if not href or href.startswith("#") or href.startswith("mailto:"):
             continue
-        # Heuristic: keep links that look job-related by href or by text.
-        if not re.search(r"(job|career|position|opening|posting|apply|req)", href, re.I) and \
-           not re.search(r"(scientist|engineer|analyst|manager|researcher|ecologist|specialist|coordinator|technician|associate|director|lead|intern)", text, re.I):
+        text = re.sub(r"\s+", " ", a.get_text(" ")).strip()
+        abs_url = urljoin(base, href)
+        if not (_HREF_JOBLIKE.search(abs_url) or _TEXT_JOBLIKE.search(text)):
             continue
-        abs_url = requests.compat.urljoin(base, href)
-        if abs_url in seen_hrefs:
+
+        if text and len(text) >= 6 and not _GENERIC_TEXT.match(text):
+            title = text
+        else:
+            title = _title_from_slug(abs_url)
+
+        if not title or len(title) < 4 or title.lower() in _STOP_SLUG:
             continue
-        seen_hrefs.add(abs_url)
+        if abs_url in seen:
+            continue
+        seen.add(abs_url)
         postings.append(
             {
-                "id": _hash_id(abs_url, text),
-                "title": text,
+                "id": _hash_id(abs_url),
+                "title": title[:140],
                 "location": "",
                 "url": abs_url,
                 "description": text,
@@ -138,10 +241,15 @@ def fetch_html(url: str) -> list[dict]:
     return postings
 
 
+# --- Dispatch ----------------------------------------------------------------
+
 _FETCHERS = {
     "greenhouse": lambda c: fetch_greenhouse(c["slug"]),
     "lever": lambda c: fetch_lever(c["slug"]),
     "ashby": lambda c: fetch_ashby(c["slug"]),
+    "bamboohr": lambda c: fetch_bamboohr(c["slug"]),
+    "rippling": lambda c: fetch_rippling(c["slug"]),
+    "gusto": lambda c: fetch_html(c["url"]),  # Gusto boards are server-rendered
     "html": lambda c: fetch_html(c["url"]),
 }
 

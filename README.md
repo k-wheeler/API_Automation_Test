@@ -19,7 +19,7 @@ COMPANIES_YAML secret ─▶ companies.yaml (ephemeral, git-ignored)
 
 | File | Purpose |
 |------|---------|
-| `watcher/fetchers.py` | Pull postings from Greenhouse / Lever / Ashby JSON APIs, or scrape an HTML page. |
+| `watcher/fetchers.py` | Pull postings from Greenhouse / Lever / Ashby / BambooHR JSON APIs, Rippling (embedded JSON), Gusto boards, or scrape an HTML page. |
 | `watcher/store.py` | Load/save `seen.json`; compute which postings are new. |
 | `watcher/filter.py` | Keyword relevance matching (`keywords.yaml`). |
 | `watcher/notify.py` | Build + send the email digest. |
@@ -56,8 +56,11 @@ python -m watcher.main --dry-run       # prints the digest; sends nothing; saves
 
 ## Notes
 
-- **HTML fallback is best-effort.** It only sees link text, so keyword matching is on
-  titles for `type: html` companies. Prefer a real ATS type when the company has one.
+- **Supported platforms:** `greenhouse`, `lever`, `ashby`, `bamboohr`, `rippling`, `gusto`,
+  and `html` (best-effort scrape). See `companies.example.yaml` for the format of each.
+- **HTML fallback is best-effort.** It only sees server-rendered markup (no JavaScript
+  runs). Titles come from link text, or the URL slug when the text is generic
+  ("Apply"/"View Position"). Fully JavaScript-rendered pages (e.g. Notion) won't yield jobs.
 - **Workday** isn't supported in v1.
 - **Cache eviction:** state lives in the Actions cache, which can evict after ~7 days of
   no runs. The daily schedule keeps it warm; if it ever evicts, one digest may repeat.

@@ -1,24 +1,39 @@
 # DUMMY example — documents the format only. The REAL list is stored as the
 # COMPANIES_YAML GitHub Actions secret and is never committed to this repo.
 #
-# To find a company's `type` + `slug`, look at its career-page URL:
-#   boards.greenhouse.io/<slug>        -> type: greenhouse, slug: <slug>
-#   jobs.lever.co/<slug>               -> type: lever,      slug: <slug>
-#   jobs.ashbyhq.com/<slug>            -> type: ashby,      slug: <slug>
-# Anything else -> type: html with the full careers URL (best-effort scrape).
+# Supported `type` values:
+#   greenhouse  slug from  job-boards.greenhouse.io/<slug>  (or boards.greenhouse.io/<slug>)
+#   lever       slug from  jobs.lever.co/<slug>
+#   ashby       slug from  jobs.ashbyhq.com/<slug>
+#   bamboohr    slug from  <slug>.bamboohr.com
+#   rippling    slug from  ats.rippling.com/<slug>/jobs
+#   gusto       full board url (jobs.gusto.com/boards/...) via `url:`
+#   html        full careers url via `url:`  (best-effort scrape; server-rendered pages only)
 
 companies:
-  - name: Example Conservation Org
+  - name: Example Greenhouse Co
     type: greenhouse
-    slug: exampleorg
+    slug: examplegh
 
-  - name: Example Climate Startup
+  - name: Example Lever Co
     type: lever
-    slug: exampleclimate
+    slug: examplelever
 
-  - name: Example Research Institute
+  - name: Example Ashby Co
     type: ashby
-    slug: exampleresearch
+    slug: exampleashby
+
+  - name: Example BambooHR Co
+    type: bamboohr
+    slug: examplebamboo
+
+  - name: Example Rippling Co
+    type: rippling
+    slug: example-opportunities
+
+  - name: Example Gusto Co
+    type: gusto
+    url: https://jobs.gusto.com/boards/example-co-<uuid>
 
   - name: Example Custom Careers Page
     type: html
