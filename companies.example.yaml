@@ -8,6 +8,9 @@
 #   bamboohr    slug from  <slug>.bamboohr.com
 #   rippling    slug from  ats.rippling.com/<slug>/jobs
 #   gusto       full board url (jobs.gusto.com/boards/...) via `url:`
+#   section     full careers url via `url:`; reads items under an "Open positions"
+#               header (server-rendered CMS pages, e.g. Webflow). Optional `header:`
+#               overrides the header text to match.
 #   html        full careers url via `url:`  (best-effort scrape; server-rendered pages only)
 
 companies:
@@ -34,6 +37,11 @@ companies:
   - name: Example Gusto Co
     type: gusto
     url: https://jobs.gusto.com/boards/example-co-<uuid>
+
+  - name: Example Webflow "Open positions" Page
+    type: section
+    url: https://example.org/about
+    # header: "open position"   # optional override
 
   - name: Example Custom Careers Page
     type: html

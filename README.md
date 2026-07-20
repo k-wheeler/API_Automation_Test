@@ -57,7 +57,8 @@ python -m watcher.main --dry-run       # prints the digest; sends nothing; saves
 ## Notes
 
 - **Supported platforms:** `greenhouse`, `lever`, `ashby`, `bamboohr`, `rippling`, `gusto`,
-  and `html` (best-effort scrape). See `companies.example.yaml` for the format of each.
+  `section` (reads items under an "Open positions" header on Webflow-style CMS pages), and
+  `html` (best-effort scrape). See `companies.example.yaml` for the format of each.
 - **HTML fallback is best-effort.** It only sees server-rendered markup (no JavaScript
   runs). Titles come from link text, or the URL slug when the text is generic
   ("Apply"/"View Position"). Fully JavaScript-rendered pages (e.g. Notion) won't yield jobs.

@@ -241,6 +241,90 @@ def fetch_html(url: str) -> list[dict]:
     return postings
 
 
+# --- "Open positions" section watcher (Webflow etc.) -------------------------
+
+_SECTION_HEADER = re.compile(
+    r"open position|open role|current opening|available position|we.?re hiring|"
+    r"join (our|the) team|(current|available|explore) opportunit",
+    re.I,
+)
+
+
+def _item_to_posting(item, base: str, page_url: str) -> dict:
+    a = item.find("a", href=True)
+    href = a["href"].strip() if a else ""
+    abs_url = urljoin(base, href) if href else page_url
+    heading = item.find(re.compile(r"^h[1-6]$"))
+    title = ""
+    for cand in (
+        heading.get_text(" ", strip=True) if heading else "",
+        a.get_text(" ", strip=True) if a else "",
+        item.get_text(" ", strip=True),
+    ):
+        cand = re.sub(r"\s+", " ", cand or "").strip()
+        if cand and not _GENERIC_TEXT.match(cand):
+            title = cand
+            break
+    if not title or _GENERIC_TEXT.match(title):
+        title = _title_from_slug(abs_url) or title
+    return {
+        "id": _hash_id(abs_url if href else title),
+        "title": title[:140],
+        "location": "",
+        "url": abs_url,
+        "description": re.sub(r"\s+", " ", item.get_text(" ", strip=True))[:400],
+    }
+
+
+def _parse_section(soup: BeautifulSoup, base: str, page_url: str, pat: re.Pattern) -> list[dict]:
+    node = soup.find(string=pat)
+    if node is None:
+        raise FetchError(f"section: no header matching {pat.pattern!r} at {page_url}")
+    header_el = node.parent
+    # Find the Webflow collection list scoped to the header's container.
+    coll = None
+    anc = header_el
+    for _ in range(8):
+        anc = anc.parent
+        if anc is None:
+            break
+        c = anc.find(class_=re.compile(r"w-dyn-list"))
+        if c is not None:
+            coll = c
+            break
+    if coll is not None:
+        items = coll.find_all(class_=re.compile(r"\bw-dyn-item\b"))
+        return [_item_to_posting(it, base, page_url) for it in items]
+
+    # Fallback (non-Webflow): job-like links appearing after the header.
+    postings, seen = [], set()
+    for a in header_el.find_all_next("a", href=True):
+        href = a["href"].strip()
+        if not href or href.startswith("#") or href.startswith("mailto:"):
+            continue
+        text = re.sub(r"\s+", " ", a.get_text(" ")).strip()
+        abs_url = urljoin(base, href)
+        if not (_HREF_JOBLIKE.search(abs_url) or _TEXT_JOBLIKE.search(text)):
+            continue
+        title = text if (text and len(text) >= 6 and not _GENERIC_TEXT.match(text)) else _title_from_slug(abs_url)
+        if not title or len(title) < 4 or title.lower() in _STOP_SLUG or abs_url in seen:
+            continue
+        seen.add(abs_url)
+        postings.append({"id": _hash_id(abs_url), "title": title[:140],
+                         "location": "", "url": abs_url, "description": text})
+    return postings
+
+
+def fetch_section(url: str, header: str | None = None) -> list[dict]:
+    """Read job items listed under an 'Open positions' header. Works on
+    server-rendered CMS pages (e.g. Webflow): an empty collection yields no
+    postings, and a role added later appears as a new item."""
+    pat = re.compile(header, re.I) if header else _SECTION_HEADER
+    resp = _get(url)
+    soup = BeautifulSoup(resp.text, "html.parser")
+    return _parse_section(soup, resp.url, resp.url, pat)
+
+
 # --- Dispatch ----------------------------------------------------------------
 
 _FETCHERS = {
@@ -250,6 +334,7 @@ _FETCHERS = {
     "bamboohr": lambda c: fetch_bamboohr(c["slug"]),
     "rippling": lambda c: fetch_rippling(c["slug"]),
     "gusto": lambda c: fetch_html(c["url"]),  # Gusto boards are server-rendered
+    "section": lambda c: fetch_section(c["url"], c.get("header")),
     "html": lambda c: fetch_html(c["url"]),
 }
 
