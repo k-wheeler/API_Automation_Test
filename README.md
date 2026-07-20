@@ -27,33 +27,6 @@ COMPANIES_YAML secret ─▶ companies.yaml (ephemeral, git-ignored)
 | `keywords.yaml` | Include/exclude relevance terms (public). |
 | `companies.example.yaml` | Dummy format sample (the real list is a secret). |
 
-## One-time setup
-
-1. **Gmail app password** — create one at
-   https://support.google.com/accounts/answer/185833 (needed to send the digest).
-2. **Add two repo secrets** (Settings → Secrets and variables → Actions):
-   - `GMAIL_APP_PASSWORD` — the app password from step 1.
-   - `COMPANIES_YAML` — paste your real watchlist YAML (same shape as
-     `companies.example.yaml`). Find each company's `type`/`slug` from its career URL:
-     `boards.greenhouse.io/<slug>`, `jobs.lever.co/<slug>`, `jobs.ashbyhq.com/<slug>`;
-     anything else → `type: html` with the full careers `url`.
-3. **Seed the state** so the first run doesn't email a giant backlog:
-   Actions → job-watcher → *Run workflow* → set **seed = true**.
-4. Done — the daily weekday cron takes over. Trigger *Run workflow* (seed = false) any
-   time to check immediately.
-
-## Run locally (for testing / tuning)
-
-```bash
-pip install -r requirements.txt
-
-# Make a LOCAL companies.yaml (git-ignored) with a couple of real companies, then:
-python -m watcher.main --dry-run       # prints the digest; sends nothing; saves nothing
-```
-
-- `--dry-run` — print instead of emailing, don't touch state.
-- `--seed` — mark everything seen without emailing.
-
 ## Notes
 
 - **Supported platforms:** `greenhouse`, `lever`, `ashby`, `bamboohr`, `rippling`, `gusto`,
