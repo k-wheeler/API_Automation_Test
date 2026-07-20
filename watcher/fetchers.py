@@ -325,6 +325,91 @@ def fetch_section(url: str, header: str | None = None) -> list[dict]:
     return _parse_section(soup, resp.url, resp.url, pat)
 
 
+# --- Notion public-page database ---------------------------------------------
+
+
+def _notion_page_id(url: str) -> str:
+    m = re.search(r"([0-9a-fA-F]{32})", url)
+    if not m:
+        raise FetchError(f"notion: could not find a 32-char page id in {url}")
+    h = m.group(1).lower()
+    return f"{h[:8]}-{h[8:12]}-{h[12:16]}-{h[16:20]}-{h[20:]}"
+
+
+def _notion_title_id(schema: dict) -> str:
+    return next((k for k, v in schema.items() if v.get("type") == "title"), "title")
+
+
+def _notion_rows(qrm: dict, cid: str, title_id: str, base: str) -> list[dict]:
+    """Extract job rows from a queryCollection recordMap."""
+    postings, seen = [], set()
+    for _bid, b in (qrm.get("block") or {}).items():
+        v = b.get("value") or {}
+        if v.get("type") != "page" or v.get("parent_id") != cid:
+            continue
+        props = v.get("properties") or {}
+        seg = props.get(title_id) or props.get("title") or []
+        title = "".join(s[0] for s in seg if s and isinstance(s[0], str)).strip()
+        rid = v.get("id", "")
+        if not title or rid in seen:
+            continue
+        seen.add(rid)
+        postings.append(
+            {
+                "id": rid or _hash_id(title),
+                "title": title[:140],
+                "location": "",
+                "url": f"{base}/{rid.replace('-', '')}",
+                "description": title,
+            }
+        )
+    return postings
+
+
+def fetch_notion(url: str) -> list[dict]:
+    """Read job rows from a public Notion page that embeds an inline database.
+
+    Uses Notion's public (unauthenticated) API — the same endpoints the page's
+    own JavaScript calls. Pages whose jobs live in a linked/sub-page database
+    (not inline) raise FetchError."""
+    base = "https://" + urlsplit(url).netloc
+    hdr = {**HEADERS, "content-type": "application/json", "accept": "application/json"}
+    r1 = requests.post(
+        base + "/api/v3/loadCachedPageChunkV2",
+        headers=hdr, timeout=TIMEOUT,
+        data=json.dumps({"page": {"id": _notion_page_id(url)}, "limit": 200,
+                         "cursor": {"stack": []}, "chunkNumber": 0, "verticalColumns": False}),
+    )
+    r1.raise_for_status()
+    rm = r1.json().get("recordMap", {})
+    collections = rm.get("collection") or {}
+    views = list(rm.get("collection_view") or {})
+    if not collections:
+        raise FetchError(f"notion: no inline database found on {url} "
+                         "(the jobs may be in a linked or sub-page database)")
+
+    postings = []
+    for cid, crec in collections.items():
+        schema = (crec.get("value") or {}).get("schema", {})
+        title_id = _notion_title_id(schema)
+        body = {"collection": {"id": cid},
+                "loader": {"type": "reducer",
+                           "reducers": {"collection_group_results": {"type": "results", "limit": 200}},
+                           "searchQuery": "", "userTimeZone": "UTC"}}
+        if views:
+            body["collectionView"] = {"id": views[0]}
+        r2 = requests.post(base + "/api/v3/queryCollection?src=initial_load",
+                           headers=hdr, timeout=TIMEOUT, data=json.dumps(body))
+        if r2.status_code != 200:
+            continue
+        qrm = r2.json().get("recordMap", {})
+        if not schema:  # schema sometimes only present in the query response
+            schema = (qrm.get("collection", {}).get(cid, {}).get("value") or {}).get("schema", {})
+            title_id = _notion_title_id(schema)
+        postings.extend(_notion_rows(qrm, cid, title_id, base))
+    return postings
+
+
 # --- Dispatch ----------------------------------------------------------------
 
 _FETCHERS = {
@@ -335,6 +420,7 @@ _FETCHERS = {
     "rippling": lambda c: fetch_rippling(c["slug"]),
     "gusto": lambda c: fetch_html(c["url"]),  # Gusto boards are server-rendered
     "section": lambda c: fetch_section(c["url"], c.get("header")),
+    "notion": lambda c: fetch_notion(c["url"]),
     "html": lambda c: fetch_html(c["url"]),
 }
 
