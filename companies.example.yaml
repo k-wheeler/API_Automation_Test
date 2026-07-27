@@ -12,8 +12,10 @@
 #               Notion database via Notion's public API (no auth). Only works when the
 #               jobs are an inline database on that page (not a linked/sub-page one).
 #   section     full careers url via `url:`; reads items under an "Open positions"
-#               header (server-rendered CMS pages, e.g. Webflow). Optional `header:`
-#               overrides the header text to match.
+#               header (server-rendered CMS pages, e.g. Webflow). For plain-text
+#               pages with no job links (e.g. some Squarespace sites that say
+#               "no open roles" and take applications by email), it instead alerts
+#               when that text changes. Optional `header:` overrides the header text.
 #   html        full careers url via `url:`  (best-effort scrape; server-rendered pages only)
 
 companies:

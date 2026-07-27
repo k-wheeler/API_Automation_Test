@@ -296,7 +296,7 @@ def _parse_section(soup: BeautifulSoup, base: str, page_url: str, pat: re.Patter
         items = coll.find_all(class_=re.compile(r"\bw-dyn-item\b"))
         return [_item_to_posting(it, base, page_url) for it in items]
 
-    # Fallback (non-Webflow): job-like links appearing after the header.
+    # Fallback A (non-Webflow): job-like links appearing after the header.
     postings, seen = [], set()
     for a in header_el.find_all_next("a", href=True):
         href = a["href"].strip()
@@ -312,7 +312,56 @@ def _parse_section(soup: BeautifulSoup, base: str, page_url: str, pat: re.Patter
         seen.add(abs_url)
         postings.append({"id": _hash_id(abs_url), "title": title[:140],
                          "location": "", "url": abs_url, "description": text})
-    return postings
+    if postings:
+        return postings
+
+    # Fallback B (plain-text pages, e.g. Squarespace with email-to-apply): watch
+    # the page's visible text. Stay silent while it says "no open roles"; when
+    # that changes, emit one alert whose id tracks the content (so it fires once
+    # per change, not every run). Assumes the page states "no open roles" when empty.
+    return _section_text_state(soup, page_url)
+
+
+_NO_OPENINGS = re.compile(
+    r"no (current(ly)? )?open (role|position)|no (current )?opening|"
+    r"not have any open|no items found|check back|currently no open|no open roles|"
+    r"no positions (are )?(currently )?(open|available)",
+    re.I,
+)
+
+
+_SKIP_TAGS = {"script", "style", "noscript", "nav", "footer"}
+
+
+def _visible_text(soup) -> str:
+    parts = []
+    for s in soup.find_all(string=True):
+        anc = s.parent
+        skip = False
+        while anc is not None:
+            if anc.name in _SKIP_TAGS:
+                skip = True
+                break
+            anc = anc.parent
+        if skip:
+            continue
+        t = s.strip()
+        if t:
+            parts.append(t)
+    return re.sub(r"\s+", " ", " ".join(parts)).strip()
+
+
+def _section_text_state(soup, page_url: str) -> list[dict]:
+    text = _visible_text(soup)
+    if not text or _NO_OPENINGS.search(text):
+        return []
+    return [{
+        "id": _hash_id(text[:3000]),
+        "title": "Open positions updated — check the page",
+        "location": "",
+        "url": page_url,
+        "description": text[:2000],
+    }]
 
 
 def fetch_section(url: str, header: str | None = None) -> list[dict]:
