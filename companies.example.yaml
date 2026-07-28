@@ -9,6 +9,8 @@
 #   rippling    slug from  ats.rippling.com/<slug>/jobs
 #   pinpoint    slug from  <slug>.pinpointhq.com
 #   workable    slug from  apply.workable.com/<slug>
+#   airtable    full public shared-view url via `url:` (airtable.com/<app>/<shr>/<tbl>);
+#               reads the view's rows. Needs a text column named Role/Title/Position.
 #   gusto       full board url (jobs.gusto.com/boards/...) via `url:`
 #   notion      full public Notion page url via `url:`; reads rows from an inline
 #               Notion database via Notion's public API (no auth). Only works when the
@@ -51,6 +53,10 @@ companies:
   - name: Example Workable Co
     type: workable
     slug: exampleworkable
+
+  - name: Example Airtable Shared View
+    type: airtable
+    url: https://airtable.com/appXXXXXXXX/shrXXXXXXXX/tblXXXXXXXX
 
   - name: Example JavaScript-only Careers Page
     type: browser

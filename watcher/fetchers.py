@@ -128,6 +128,83 @@ def fetch_bamboohr(slug: str) -> list[dict]:
     return postings
 
 
+def _airtable_cell_text(v) -> str:
+    if v is None:
+        return ""
+    if isinstance(v, str):
+        return v
+    if isinstance(v, (int, float, bool)):
+        return str(v)
+    if isinstance(v, list):
+        return ", ".join(x for x in (_airtable_cell_text(i) for i in v) if x)
+    if isinstance(v, dict):
+        return v.get("name") or v.get("url") or v.get("text") or v.get("label") or ""
+    return str(v)
+
+
+def fetch_airtable(url: str) -> list[dict]:
+    """Read rows from a public Airtable shared view (airtable.com/<app>/<shr>/<tbl>).
+
+    Replicates the page's own `readSharedViewData` call: the share page embeds a
+    signed `urlWithParams`; we extract it and call the API with the required
+    headers. The view's own filters decide which rows (open roles) are returned."""
+    s = requests.Session()
+    s.headers.update(HEADERS)
+    html = s.get(url, timeout=TIMEOUT).text
+    m = re.search(r'urlWithParams:\s*"([^"]+)"', html)
+    if not m:
+        raise FetchError(f"airtable: could not find shared-view config at {url}")
+    path = json.loads('"' + m.group(1) + '"')
+    app_m = re.search(r"(app\w+)", url)
+    app_id = app_m.group(1) if app_m else ""
+    headers = {
+        **HEADERS,
+        "x-airtable-application-id": app_id,
+        "x-requested-with": "XMLHttpRequest",
+        "x-time-zone": "America/New_York",
+        "x-user-locale": "en",
+        "x-airtable-accept-msgpack": "false",
+        "accept": "application/json",
+    }
+    resp = s.get("https://airtable.com" + path, headers=headers, timeout=TIMEOUT)
+    resp.raise_for_status()
+    data = resp.json().get("data", {})
+    table = data.get("table", {}) if isinstance(data.get("table"), dict) else {}
+    rows = table.get("rows") or data.get("rows") or []
+    cols = table.get("columns") or data.get("columns") or []
+    names = {c.get("id"): c.get("name", "") for c in cols}
+
+    def find_col(pattern):
+        return next((cid for cid, nm in names.items() if re.search(pattern, nm or "", re.I)), None)
+
+    title_col = find_col(r"role|title|position|posting|opening") or find_col(r"\bjob\b(?!\s*desc)")
+    loc_col = find_col(r"location|city|where|region|country")
+    url_col = find_col(r"apply|link|url|posting")
+
+    postings = []
+    for row in rows:
+        cv = row.get("cellValuesByColumnId", {})
+        title = _airtable_cell_text(cv.get(title_col)) if title_col else ""
+        if not title:
+            title = next((t for t in (_airtable_cell_text(v) for v in cv.values()) if t), "")
+        if not title:
+            continue
+        link = _airtable_cell_text(cv.get(url_col)) if url_col else ""
+        if not link.startswith("http"):
+            link = url
+        desc = " ".join(_airtable_cell_text(v) for k, v in cv.items() if k != title_col)
+        postings.append(
+            {
+                "id": str(row.get("id")),
+                "title": title[:140],
+                "location": _airtable_cell_text(cv.get(loc_col)) if loc_col else "",
+                "url": link,
+                "description": f"{title} {desc}"[:600],
+            }
+        )
+    return postings
+
+
 def fetch_workable(slug: str) -> list[dict]:
     url = f"https://apply.workable.com/api/v1/widget/accounts/{slug}?details=true"
     data = _get(url, headers={"accept": "application/json"}).json()
@@ -559,6 +636,7 @@ _FETCHERS = {
     "ashby": lambda c: fetch_ashby(c["slug"]),
     "bamboohr": lambda c: fetch_bamboohr(c["slug"]),
     "workable": lambda c: fetch_workable(c["slug"]),
+    "airtable": lambda c: fetch_airtable(c["url"]),
     "pinpoint": lambda c: fetch_pinpoint(c["slug"]),
     "rippling": lambda c: fetch_rippling(c["slug"]),
     "gusto": lambda c: fetch_html(c["url"]),  # Gusto boards are server-rendered
