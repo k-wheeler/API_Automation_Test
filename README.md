@@ -29,10 +29,13 @@ COMPANIES_YAML secret ─▶ companies.yaml (ephemeral, git-ignored)
 
 ## Notes
 
-- **Supported platforms:** `greenhouse`, `lever`, `ashby`, `bamboohr`, `rippling`, `pinpoint`, `gusto`,
-  `notion` (public Notion page with an inline jobs database, via Notion's public API),
-  `section` (reads items under an "Open positions" header on Webflow-style CMS pages), and
+- **Supported platforms:** `greenhouse`, `lever`, `ashby`, `bamboohr`, `rippling`, `pinpoint`,
+  `workable`, `gusto`, `notion` (public Notion page with an inline jobs database),
+  `section` (reads items under an "Open positions" header on Webflow-style CMS pages),
+  `browser` (renders JavaScript-only pages with headless Chromium, then scrapes), and
   `html` (best-effort scrape). See `companies.example.yaml` for the format of each.
+- **The `browser` type needs Chromium**, installed in CI by the workflow
+  (`playwright install --with-deps chromium`). Locally: `python -m playwright install chromium`.
 - **HTML fallback is best-effort.** It only sees server-rendered markup (no JavaScript
   runs). Titles come from link text, or the URL slug when the text is generic
   ("Apply"/"View Position"). Fully JavaScript-rendered pages (e.g. Notion) won't yield jobs.

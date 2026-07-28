@@ -22,6 +22,9 @@ jobs:
 
       - run: pip install -r requirements.txt
 
+      # Headless Chromium for the `browser` fetcher (JavaScript-rendered pages).
+      - run: python -m playwright install --with-deps chromium
+
       # 1. Materialize the private watchlist from the secret (git-ignored).
       - name: Write companies.yaml from secret
         run: printf '%s' "$COMPANIES_YAML" > companies.yaml

@@ -128,6 +128,30 @@ def fetch_bamboohr(slug: str) -> list[dict]:
     return postings
 
 
+def fetch_workable(slug: str) -> list[dict]:
+    url = f"https://apply.workable.com/api/v1/widget/accounts/{slug}?details=true"
+    data = _get(url, headers={"accept": "application/json"}).json()
+    postings = []
+    for job in data.get("jobs", []):
+        loc = job.get("location") or {}
+        if isinstance(loc, dict):
+            loc = ", ".join(
+                x for x in [loc.get("city"), loc.get("region") or loc.get("state"),
+                            loc.get("country")] if x
+            )
+        postings.append(
+            {
+                "id": str(job.get("shortcode") or job.get("id") or job.get("code") or job.get("url")),
+                "title": (job.get("title") or "").strip(),
+                "location": loc if isinstance(loc, str) else "",
+                "url": job.get("url") or job.get("application_url") or job.get("shortlink")
+                or f"https://apply.workable.com/{slug}/",
+                "description": _strip_html(job.get("description")),
+            }
+        )
+    return postings
+
+
 def fetch_pinpoint(slug: str) -> list[dict]:
     url = f"https://{slug}.pinpointhq.com/postings.json"
     data = _get(url, headers={"accept": "application/json"}).json().get("data", [])
@@ -222,13 +246,10 @@ def _title_from_slug(url: str) -> str:
     return seg.replace("_", " ").replace("-", " ").strip()
 
 
-def fetch_html(url: str) -> list[dict]:
-    """Best-effort scrape of a career page. Emits one posting per job-looking
-    link; titles come from the link text, or the URL slug when the text is
-    generic/empty. Only works on server-rendered markup (no JavaScript)."""
-    resp = _get(url)
-    soup = BeautifulSoup(resp.text, "html.parser")
-    base = resp.url
+def _extract_job_links(soup: BeautifulSoup, base: str) -> list[dict]:
+    """Emit one posting per job-looking link. Title comes from the link text,
+    or the URL slug when the text is generic/empty. Shared by the html and
+    browser fetchers."""
     postings = []
     seen = set()
     for a in soup.find_all("a", href=True):
@@ -260,6 +281,56 @@ def fetch_html(url: str) -> list[dict]:
             }
         )
     return postings
+
+
+def fetch_html(url: str) -> list[dict]:
+    """Best-effort scrape of a career page. Only works on server-rendered markup
+    (no JavaScript). For JavaScript-rendered pages, use the browser fetcher."""
+    resp = _get(url)
+    return _extract_job_links(BeautifulSoup(resp.text, "html.parser"), resp.url)
+
+
+def _render_page(url: str, wait_selector: str | None = None, timeout_ms: int = 45000) -> str:
+    """Render a JavaScript page with headless Chromium and return its HTML."""
+    try:
+        from playwright.sync_api import sync_playwright
+    except ImportError as exc:
+        raise FetchError(
+            "browser fetcher needs Playwright — `pip install playwright` then "
+            "`python -m playwright install chromium`"
+        ) from exc
+    with sync_playwright() as pw:
+        browser = pw.chromium.launch(headless=True)
+        try:
+            page = browser.new_page(user_agent=HEADERS["User-Agent"])
+            page.goto(url, wait_until="domcontentloaded", timeout=timeout_ms)
+            # networkidle is ideal but some SPAs poll forever — don't hang on it.
+            try:
+                page.wait_for_load_state("networkidle", timeout=8000)
+            except Exception:
+                pass
+            if wait_selector:
+                try:
+                    page.wait_for_selector(wait_selector, timeout=8000)
+                except Exception:
+                    pass
+            page.wait_for_timeout(2500)  # let late XHR-rendered lists settle
+            return page.content()
+        finally:
+            browser.close()
+
+
+def fetch_browser(url: str, wait_selector: str | None = None) -> list[dict]:
+    """Render a JavaScript-heavy career page in headless Chromium, then extract
+    job links from the rendered DOM. Use for SPA/JS boards (Paycom, Getro,
+    Airtable, custom JS sites) that the html/section fetchers can't read."""
+    try:
+        html = _render_page(url, wait_selector)
+    except FetchError:
+        raise
+    except Exception as exc:  # Playwright timeouts, crashes, etc.
+        raise FetchError(f"browser: {exc}") from exc
+    return _extract_job_links(BeautifulSoup(html, "html.parser"), url)
 
 
 # --- "Open positions" section watcher (Webflow etc.) -------------------------
@@ -487,11 +558,13 @@ _FETCHERS = {
     "lever": lambda c: fetch_lever(c["slug"]),
     "ashby": lambda c: fetch_ashby(c["slug"]),
     "bamboohr": lambda c: fetch_bamboohr(c["slug"]),
+    "workable": lambda c: fetch_workable(c["slug"]),
     "pinpoint": lambda c: fetch_pinpoint(c["slug"]),
     "rippling": lambda c: fetch_rippling(c["slug"]),
     "gusto": lambda c: fetch_html(c["url"]),  # Gusto boards are server-rendered
     "section": lambda c: fetch_section(c["url"], c.get("header")),
     "notion": lambda c: fetch_notion(c["url"]),
+    "browser": lambda c: fetch_browser(c["url"], c.get("wait")),
     "html": lambda c: fetch_html(c["url"]),
 }
 
