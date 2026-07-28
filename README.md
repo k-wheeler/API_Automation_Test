@@ -29,7 +29,7 @@ COMPANIES_YAML secret ─▶ companies.yaml (ephemeral, git-ignored)
 
 ## Notes
 
-- **Supported platforms:** `greenhouse`, `lever`, `ashby`, `bamboohr`, `rippling`, `pinpoint`,
+- **Supported platforms:** `greenhouse`, `lever`, `ashby`, `bamboohr`, `breezy`, `rippling`, `pinpoint`,
   `workable`, `gusto`, `airtable` (public shared-view), `notion` (public Notion page with an inline jobs database),
   `section` (reads items under an "Open positions" header on Webflow-style CMS pages),
   `browser` (renders JavaScript-only pages with headless Chromium, then scrapes), and

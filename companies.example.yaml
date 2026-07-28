@@ -9,6 +9,7 @@
 #   rippling    slug from  ats.rippling.com/<slug>/jobs
 #   pinpoint    slug from  <slug>.pinpointhq.com
 #   workable    slug from  apply.workable.com/<slug>
+#   breezy      slug from  <slug>.breezy.hr
 #   airtable    full public shared-view url via `url:` (airtable.com/<app>/<shr>/<tbl>);
 #               reads the view's rows. Needs a text column named Role/Title/Position.
 #   gusto       full board url (jobs.gusto.com/boards/...) via `url:`
@@ -49,6 +50,10 @@ companies:
   - name: Example Pinpoint Co
     type: pinpoint
     slug: examplepinpoint
+
+  - name: Example Breezy Co
+    type: breezy
+    slug: example-company
 
   - name: Example Workable Co
     type: workable

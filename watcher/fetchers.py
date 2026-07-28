@@ -205,6 +205,30 @@ def fetch_airtable(url: str) -> list[dict]:
     return postings
 
 
+def fetch_breezy(slug: str) -> list[dict]:
+    url = f"https://{slug}.breezy.hr/json"
+    data = _get(url, headers={"accept": "application/json"}).json()
+    postings = []
+    for job in data:
+        loc = job.get("location") or {}
+        if isinstance(loc, dict):
+            city = loc.get("city")
+            country = loc.get("country")
+            country = country.get("name") if isinstance(country, dict) else country
+            loc = loc.get("name") or ", ".join(x for x in [city, country] if x)
+        dept = job.get("department")
+        postings.append(
+            {
+                "id": str(job.get("id") or job.get("friendly_id")),
+                "title": (job.get("name") or "").strip(),
+                "location": loc if isinstance(loc, str) else "",
+                "url": job.get("url", ""),
+                "description": dept if isinstance(dept, str) else "",
+            }
+        )
+    return postings
+
+
 def fetch_workable(slug: str) -> list[dict]:
     url = f"https://apply.workable.com/api/v1/widget/accounts/{slug}?details=true"
     data = _get(url, headers={"accept": "application/json"}).json()
@@ -635,6 +659,7 @@ _FETCHERS = {
     "lever": lambda c: fetch_lever(c["slug"]),
     "ashby": lambda c: fetch_ashby(c["slug"]),
     "bamboohr": lambda c: fetch_bamboohr(c["slug"]),
+    "breezy": lambda c: fetch_breezy(c["slug"]),
     "workable": lambda c: fetch_workable(c["slug"]),
     "airtable": lambda c: fetch_airtable(c["url"]),
     "pinpoint": lambda c: fetch_pinpoint(c["slug"]),
