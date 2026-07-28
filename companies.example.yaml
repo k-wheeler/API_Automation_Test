@@ -7,6 +7,7 @@
 #   ashby       slug from  jobs.ashbyhq.com/<slug>
 #   bamboohr    slug from  <slug>.bamboohr.com
 #   rippling    slug from  ats.rippling.com/<slug>/jobs
+#   pinpoint    slug from  <slug>.pinpointhq.com
 #   gusto       full board url (jobs.gusto.com/boards/...) via `url:`
 #   notion      full public Notion page url via `url:`; reads rows from an inline
 #               Notion database via Notion's public API (no auth). Only works when the
@@ -38,6 +39,10 @@ companies:
   - name: Example Rippling Co
     type: rippling
     slug: example-opportunities
+
+  - name: Example Pinpoint Co
+    type: pinpoint
+    slug: examplepinpoint
 
   - name: Example Gusto Co
     type: gusto

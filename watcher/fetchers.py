@@ -128,6 +128,27 @@ def fetch_bamboohr(slug: str) -> list[dict]:
     return postings
 
 
+def fetch_pinpoint(slug: str) -> list[dict]:
+    url = f"https://{slug}.pinpointhq.com/postings.json"
+    data = _get(url, headers={"accept": "application/json"}).json().get("data", [])
+    postings = []
+    for job in data:
+        loc = job.get("location")
+        if isinstance(loc, dict):
+            loc = loc.get("name") or loc.get("city") or ""
+        job_url = job.get("url") or (f"https://{slug}.pinpointhq.com" + (job.get("path") or ""))
+        postings.append(
+            {
+                "id": str(job.get("id")),
+                "title": (job.get("title") or "").strip(),
+                "location": (loc or "").strip() if isinstance(loc, str) else "",
+                "url": job_url,
+                "description": _strip_html(job.get("description")),
+            }
+        )
+    return postings
+
+
 def fetch_rippling(slug: str) -> list[dict]:
     """Rippling ATS boards are Next.js apps; the job list is embedded in the
     __NEXT_DATA__ script tag (react-query dehydrated state)."""
@@ -466,6 +487,7 @@ _FETCHERS = {
     "lever": lambda c: fetch_lever(c["slug"]),
     "ashby": lambda c: fetch_ashby(c["slug"]),
     "bamboohr": lambda c: fetch_bamboohr(c["slug"]),
+    "pinpoint": lambda c: fetch_pinpoint(c["slug"]),
     "rippling": lambda c: fetch_rippling(c["slug"]),
     "gusto": lambda c: fetch_html(c["url"]),  # Gusto boards are server-rendered
     "section": lambda c: fetch_section(c["url"], c.get("header")),

@@ -29,7 +29,7 @@ COMPANIES_YAML secret ─▶ companies.yaml (ephemeral, git-ignored)
 
 ## Notes
 
-- **Supported platforms:** `greenhouse`, `lever`, `ashby`, `bamboohr`, `rippling`, `gusto`,
+- **Supported platforms:** `greenhouse`, `lever`, `ashby`, `bamboohr`, `rippling`, `pinpoint`, `gusto`,
   `notion` (public Notion page with an inline jobs database, via Notion's public API),
   `section` (reads items under an "Open positions" header on Webflow-style CMS pages), and
   `html` (best-effort scrape). See `companies.example.yaml` for the format of each.
